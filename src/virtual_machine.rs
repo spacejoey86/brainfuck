@@ -27,6 +27,45 @@ impl<'a> VirtualMachine<'a> {
         }
     }
 
+    fn get_data(&self) -> i64 {
+        *self.data.get(&self.data_pointer).unwrap_or(&0)
+    }
+
+    fn set_data(&mut self, new_value: i64) {
+        if new_value == 0 {
+            self.data.remove(&self.data_pointer);
+        } else {
+            self.data.insert(self.data_pointer, new_value);
+        }
+    }
+
+    fn jump_matching(
+        &mut self,
+        from: Instruction,
+        to: Instruction,
+        forwards: bool,
+    ) -> Result<(), VirtualMachineError> {
+        let mut bracket_count = 1;
+        while bracket_count > 0 {
+            if forwards {
+                self.program_pointer += 1;
+            } else {
+                self.program_pointer -= 1
+            }
+            if let Some(next_instruction) = self.program.inner.get(self.program_pointer) {
+                if *next_instruction == from {
+                    bracket_count += 1;
+                } else if *next_instruction == to {
+                    bracket_count -= 1;
+                }
+            } else {
+                return Err(VirtualMachineError::MissingEndLoop);
+            }
+        }
+
+        return Ok(());
+    }
+
     /// Execute the next instruction
     pub fn step(&mut self) -> Result<VirtualMachineStatus, VirtualMachineError> {
         let Some(instruction) = self.program.inner.get(self.program_pointer) else {
@@ -43,59 +82,23 @@ impl<'a> VirtualMachine<'a> {
                 self.program_pointer += 1;
             }
             Instruction::Increment => {
-                let new_value = self.data.get(&self.data_pointer).unwrap_or(&0) + 1;
-                if new_value == 0 {
-                    self.data.remove(&self.data_pointer);
-                } else {
-                    self.data.insert(self.data_pointer, new_value);
-                }
+                self.set_data(self.get_data() + 1);
                 self.program_pointer += 1;
             }
             Instruction::Decrement => {
-                let new_value = self.data.get(&self.data_pointer).unwrap_or(&0) - 1;
-                if new_value == 0 {
-                    self.data.remove(&self.data_pointer);
-                } else {
-                    self.data.insert(self.data_pointer, new_value);
-                }
+                self.set_data(self.get_data() - 1);
                 self.program_pointer += 1;
             }
             Instruction::StartLoop => {
-                if *self.data.get(&self.data_pointer).unwrap_or(&0) == 0 {
-                    let mut bracket_count = 1;
-                    while bracket_count > 0 {
-                        self.program_pointer += 1;
-                        if let Some(next_instruction) = self.program.inner.get(self.program_pointer)
-                        {
-                            match next_instruction {
-                                Instruction::StartLoop => bracket_count += 1,
-                                Instruction::EndLoop => bracket_count -= 1,
-                                _ => {}
-                            }
-                        } else {
-                            return Err(VirtualMachineError::MissingEndLoop);
-                        }
-                    }
+                if self.get_data() == 0 {
+                    self.jump_matching(Instruction::StartLoop, Instruction::EndLoop, true)?;
                 } else {
                     self.program_pointer += 1;
                 }
             }
             Instruction::EndLoop => {
-                if *self.data.get(&self.data_pointer).unwrap_or(&0) != 0 {
-                    let mut bracket_count = 1;
-                    while bracket_count > 0 {
-                        self.program_pointer -= 1;
-                        if let Some(next_instruction) = self.program.inner.get(self.program_pointer)
-                        {
-                            match next_instruction {
-                                Instruction::StartLoop => bracket_count -= 1,
-                                Instruction::EndLoop => bracket_count += 1,
-                                _ => {}
-                            }
-                        } else {
-                            return Err(VirtualMachineError::MissingStartLoop);
-                        }
-                    }
+                if self.get_data() != 0 {
+                    self.jump_matching(Instruction::EndLoop, Instruction::StartLoop, false)?;
                 } else {
                     self.program_pointer += 1;
                 }
@@ -105,16 +108,12 @@ impl<'a> VirtualMachine<'a> {
                 self.input
                     .read_exact(&mut buf)
                     .expect("failed to read from input");
-                if buf[0] == 0 {
-                    self.data.remove(&self.data_pointer);
-                } else {
-                    self.data.insert(self.data_pointer, buf[0] as i64);
-                }
+                self.set_data(buf[0] as i64);
                 self.program_pointer += 1;
             }
             Instruction::Output => {
                 // let buf: [u8; 8] = self.data.get(&self.data_pointer).unwrap_or(&0).to_le_bytes();
-                let buf: [u8; 1] = [*self.data.get(&self.data_pointer).unwrap_or(&0) as u8];
+                let buf: [u8; 1] = [self.get_data() as u8];
                 self.output.write(&buf).expect("failed to write to output");
                 self.program_pointer += 1;
             }
@@ -131,6 +130,7 @@ impl<'a> VirtualMachine<'a> {
     }
 }
 
+#[derive(Debug)]
 pub enum VirtualMachineError {
     MissingEndLoop,
     MissingStartLoop,
@@ -153,7 +153,7 @@ mod tests {
         let mut output = Vec::new();
         let mut vm = VirtualMachine::new(program, &mut input, &mut output);
 
-        vm.run();
+        vm.run().unwrap();
 
         assert_eq!(String::from_utf8(output).unwrap(), "Hello World!\n")
     }
