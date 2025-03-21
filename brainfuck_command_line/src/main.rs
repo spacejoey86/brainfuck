@@ -9,12 +9,15 @@ use std::{
 fn main() {
     let cli = Cli::parse();
 
-    println!("ready to read file {:?}", cli.bf_source_file);
+    println!("Reading file {:?}", cli.bf_source_file);
     let contents = fs::read_to_string(cli.bf_source_file).expect("Cannot read file");
     let program = Program::from_string(contents);
+
     let mut input = stdin();
     let mut output = stdout();
     let mut vm = VirtualMachine::new(program, &mut input, &mut output);
+
+    println!("Executing:");
     vm.run().expect("Program execution failed");
 }
 
