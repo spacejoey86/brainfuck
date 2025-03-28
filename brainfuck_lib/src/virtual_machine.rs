@@ -8,7 +8,7 @@ use crate::{instruction::Instruction, program::Program};
 pub struct VirtualMachine<'a> {
     program: Program,
     program_pointer: usize,
-    data: HashMap<usize, i64>,
+    data: HashMap<usize, u8>,
     data_pointer: usize,
 
     input: Box<&'a mut dyn Read>,
@@ -27,11 +27,11 @@ impl<'a> VirtualMachine<'a> {
         }
     }
 
-    fn get_data(&self) -> i64 {
+    fn get_data(&self) -> u8 {
         *self.data.get(&self.data_pointer).unwrap_or(&0)
     }
 
-    fn set_data(&mut self, new_value: i64) {
+    fn set_data(&mut self, new_value: u8) {
         if new_value == 0 {
             self.data.remove(&self.data_pointer);
         } else {
@@ -74,19 +74,19 @@ impl<'a> VirtualMachine<'a> {
 
         match instruction {
             Instruction::Right => {
-                self.data_pointer += 1;
+                self.data_pointer = self.data_pointer.wrapping_add(1);
                 self.program_pointer += 1;
             }
             Instruction::Left => {
-                self.data_pointer -= 1;
+                self.data_pointer = self.data_pointer.wrapping_sub(1);
                 self.program_pointer += 1;
             }
             Instruction::Increment => {
-                self.set_data(self.get_data() + 1);
+                self.set_data(self.get_data().wrapping_add(1));
                 self.program_pointer += 1;
             }
             Instruction::Decrement => {
-                self.set_data(self.get_data() - 1);
+                self.set_data(self.get_data().wrapping_sub(1));
                 self.program_pointer += 1;
             }
             Instruction::StartLoop => {
@@ -108,7 +108,7 @@ impl<'a> VirtualMachine<'a> {
                 self.input
                     .read_exact(&mut buf)
                     .expect("failed to read from input");
-                self.set_data(buf[0] as i64);
+                self.set_data(buf[0]);
                 self.program_pointer += 1;
             }
             Instruction::Output => {
